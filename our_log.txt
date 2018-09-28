@@ -1,0 +1,453 @@
+Num:0
+Ip:192.168.0.123
+addressFamily:ipv4
+startTime:1536202345
+endTime:1536202448
+os:Actiontec MI424WR-GEN3I WAP
+deviceType:WAP 
+mac:NULL
+start
+3306	tcp	open	mysql
+end
+openNum:1
+
+Num:0
+Ip:192.168.0.1
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:VxWorks
+deviceType:general purpose 
+mac:C8:3A:35:4B:9A:A8
+start
+80	tcp	open	http
+end
+openNum:1
+
+Num:1
+Ip:192.168.0.75
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Linux 3.2 - 4.9
+deviceType:general purpose 
+mac:FC:AA:14:5A:97:2D
+start
+22	tcp	open	ssh
+end
+openNum:1
+
+Num:2
+Ip:192.168.0.100
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:E0:05:C5:C0:80:F5
+start
+end
+openNum:0
+
+Num:3
+Ip:192.168.0.101
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:38:83:45:C4:1D:21
+start
+end
+openNum:0
+
+Num:4
+Ip:192.168.0.102
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536204002
+os:Microsoft Windows Longhorn
+deviceType:general purpose 
+mac:74:D4:35:9E:D9:E9
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+443	tcp	open	https
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+1521	tcp	open	oracle
+1556	tcp	open	veritas_pbx
+end
+openNum:8
+
+Num:5
+Ip:192.168.0.103
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:40:8D:5C:63:91:BC
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+8082	tcp	open	blackice-alerts
+end
+openNum:4
+
+Num:6
+Ip:192.168.0.104
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Microsoft Windows Vista, Windows 7 SP1, or Windows 8.1 Update 1
+deviceType:general purpose 
+mac:30:B4:9E:7B:4F:76
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+443	tcp	open	https
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+1025	tcp	open	NFS-or-IIS
+1026	tcp	open	LSA-or-nterm
+1027	tcp	open	IIS
+1028	tcp	open	unknown
+1029	tcp	open	ms-lsa
+1030	tcp	open	iad1
+3389	tcp	open	ms-wbt-server
+end
+openNum:13
+
+Num:7
+Ip:192.168.0.108
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Microsoft Windows 7
+deviceType:general purpose 
+mac:4C:CC:6A:75:76:C1
+start
+135	tcp	open	msrpc
+443	tcp	open	https
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+2869	tcp	open	icslap
+3389	tcp	open	ms-wbt-server
+end
+openNum:6
+
+Num:8
+Ip:192.168.0.109
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Linux 3.2 - 4.9
+deviceType:general purpose 
+mac:40:8D:5C:63:91:DF
+start
+631	tcp	open	ipp
+end
+openNum:1
+
+Num:9
+Ip:192.168.0.112
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:AVtech Room Alert 26W environmental monitor
+deviceType:specialized 
+mac:4C:CC:6A:75:77:6D
+start
+3000	tcp	open	ppp
+5357	tcp	open	wsdapi
+end
+openNum:2
+
+Num:10
+Ip:192.168.0.117
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Microsoft Windows 7 SP0 - SP1, Windows Server 2008 SP1, Windows Server 2008 R2, Windows 8, or Windows 8.1 Update 1
+deviceType:general purpose 
+mac:94:DE:80:83:7C:F9
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+515	tcp	open	printer
+1025	tcp	open	NFS-or-IIS
+1026	tcp	open	LSA-or-nterm
+1027	tcp	open	IIS
+1028	tcp	open	unknown
+1029	tcp	open	ms-lsa
+1049	tcp	open	td-postman
+1051	tcp	open	optima-vnet
+3306	tcp	open	mysql
+3690	tcp	open	svn
+5357	tcp	open	wsdapi
+end
+openNum:14
+
+Num:11
+Ip:192.168.0.118
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:0C:9D:92:0F:7C:78
+start
+end
+openNum:0
+
+Num:12
+Ip:192.168.0.119
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536204002
+os:Microsoft Windows Longhorn
+deviceType:general purpose 
+mac:94:DE:80:8F:FF:FD
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+443	tcp	open	https
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+1521	tcp	open	oracle
+2869	tcp	open	icslap
+3306	tcp	open	mysql
+8081	tcp	open	blackice-icecap
+8082	tcp	open	blackice-alerts
+end
+openNum:11
+
+Num:13
+Ip:192.168.0.120
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:AVtech Room Alert 26W environmental monitor
+deviceType:specialized 
+mac:FC:AA:14:A3:47:10
+start
+3389	tcp	open	ms-wbt-server
+15000	tcp	open	hydap
+end
+openNum:2
+
+Num:14
+Ip:192.168.0.122
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Linux 3.2 - 4.9
+deviceType:general purpose 
+mac:50:E5:49:11:05:06
+start
+21	tcp	open	ftp
+22	tcp	open	ssh
+3690	tcp	open	svn
+end
+openNum:3
+
+Num:15
+Ip:192.168.0.125
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Linux 3.2 - 4.9
+deviceType:general purpose 
+mac:94:DE:80:5B:1C:C1
+start
+902	tcp	open	iss-realsecure
+end
+openNum:1
+
+Num:16
+Ip:192.168.0.129
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536204002
+os:Microsoft Windows Longhorn
+deviceType:general purpose 
+mac:4C:ED:FB:C1:20:A8
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+443	tcp	open	https
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+end
+openNum:6
+
+Num:17
+Ip:192.168.0.131
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:4C:ED:FB:C1:1B:2E
+start
+end
+openNum:0
+
+Num:18
+Ip:192.168.0.133
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536204002
+os:Microsoft Windows Longhorn
+deviceType:general purpose 
+mac:4C:ED:FB:C1:1B:1D
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+1521	tcp	open	oracle
+3306	tcp	open	mysql
+end
+openNum:5
+
+Num:19
+Ip:192.168.0.135
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:Microsoft Windows Server 2008 SP1 or Windows Server 2008 R2
+deviceType:general purpose 
+mac:94:DE:80:E2:1C:2C
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+end
+openNum:5
+
+Num:20
+Ip:192.168.0.136
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:Microsoft Windows Server 2008 SP1 or Windows Server 2008 R2
+deviceType:general purpose 
+mac:FC:AA:14:5B:48:87
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+5678	tcp	open	rrac
+8082	tcp	open	blackice-alerts
+10000	tcp	open	snet-sensor-mgmt
+end
+openNum:6
+
+Num:21
+Ip:192.168.0.139
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:FreeBSD 6.2-RELEASE
+deviceType:general purpose 
+mac:10:F0:05:34:C0:BF
+start
+443	tcp	open	https
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+1433	tcp	open	ms-sql-s
+end
+openNum:4
+
+Num:22
+Ip:192.168.0.142
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:4C:ED:FB:C1:1B:1E
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+5357	tcp	open	wsdapi
+49152	tcp	open	unknown
+end
+openNum:7
+
+Num:23
+Ip:192.168.0.147
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:Microsoft Windows Server 2008 SP1 or Windows Server 2008 R2
+deviceType:general purpose 
+mac:FC:AA:14:5B:48:8C
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+445	tcp	open	microsoft-ds
+3000	tcp	open	ppp
+8080	tcp	open	http-proxy
+end
+openNum:5
+
+Num:24
+Ip:192.168.0.150
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203994
+os:NULL
+deviceType:NULL
+mac:94:DE:80:71:21:52
+start
+135	tcp	open	msrpc
+139	tcp	open	netbios-ssn
+443	tcp	open	https
+445	tcp	open	microsoft-ds
+902	tcp	open	iss-realsecure
+912	tcp	open	apex-mesh
+3306	tcp	open	mysql
+end
+openNum:7
+
+Num:25
+Ip:192.168.0.201
+addressFamily:ipv4
+startTime:1536203961
+endTime:1536203987
+os:Linux 3.2 - 4.9
+deviceType:general purpose 
+mac:50:E5:49:81:93:88
+start
+22	tcp	open	ssh
+3306	tcp	open	mysql
+end
+openNum:2
+
+Num:0
+Ip:192.168.0.123
+addressFamily:ipv4
+startTime:1536204004
+endTime:1536204005
+os:Linux 3.8 - 4.14
+deviceType:general purpose 
+mac:NULL
+start
+22	tcp	open	ssh
+3306	tcp	open	mysql
+end
+openNum:2
+

@@ -1,0 +1,663 @@
+#include "scan_engine.h"
+#include "scanops.h"
+#include "util.h"
+#include "scan_engine_raw.h"
+#include "payload.h"
+#include "scan_lists.h"
+#include "errorhandle.h"
+#include "tcpip.h"
+#include "netutil.h"
+#include <stdlib.h>
+#include <unistd.h>
+
+extern ScanOps o;
+
+const int HssPredicate::operator() (const HostScanStats *lhs, const HostScanStats *rhs) const {
+  const struct sockaddr_storage *lss, *rss;
+  lss = (lhs) ? lhs->target->TargetSockAddr() : ss;
+  rss = (rhs) ? rhs->target->TargetSockAddr() : ss;
+  return 0 > sockaddr_storage_cmp(lss, rss);
+}
+struct sockaddr_storage *HssPredicate::ss = NULL;
+
+/* Determines an ideal number of hosts to be scanned (port scan, os
+   scan, version detection, etc.) in parallel after the ping scan is
+   completed.  This is a balance between efficiency (more hosts in
+   parallel often reduces scan time per host) and results latency (you
+   need to wait for all hosts to finish before Nmap can spit out the
+   results).  Memory consumption usually also increases with the
+   number of hosts scanned in parallel, though rarely to significant
+   levels. */
+int determineScanGroupSize(int hosts_scanned_so_far,
+                           struct scan_lists *ports) {
+  int groupsize = 16;
+
+  if (o.UDPScan())
+    groupsize = 128;
+  else if (o.SCTPScan())
+    groupsize = 128;
+  else if (o.TCPScan()) {
+    groupsize = MAX(1024 / (ports->tcp_count ? ports->tcp_count : 1), 64);
+    if (ports->tcp_count > 1000 && o.timing_level <= 4) {
+      int quickgroupsz = 4;
+      if (o.timing_level == 4)
+        quickgroupsz = 8;
+      if (hosts_scanned_so_far == 0)
+        groupsize = quickgroupsz; // Give quick results for the very first batch
+      else if (hosts_scanned_so_far == quickgroupsz &&
+               groupsize > quickgroupsz * 2)
+        /* account for initial quick-scan to keep us aligned
+           on common network boundaries (e.g. /24) */
+        groupsize -= quickgroupsz;
+    }
+  }
+
+  groupsize = box(o.minHostGroupSz(), o.maxHostGroupSz(), groupsize);
+
+  if (o.max_ips_to_scan && (o.max_ips_to_scan - hosts_scanned_so_far) < (unsigned int)groupsize)
+    // don't scan more randomly generated hosts than was specified
+    groupsize = o.max_ips_to_scan - hosts_scanned_so_far;
+
+  return groupsize;
+}
+
+/* Start the timeout clocks of any targets that aren't already timedout */
+static void startTimeOutClocks(std::vector<Target *> &Targets) {
+  struct timeval tv;
+  std::vector<Target *>::iterator hostI;
+
+  gettimeofday(&tv, NULL);
+  for (hostI = Targets.begin(); hostI != Targets.end(); hostI++) {
+    if (!(*hostI)->timedOut(NULL))
+      (*hostI)->startTimeOutClock(&tv);
+  }
+}
+
+/* Initialize the ultra_timing_vals structure timing.  The utt must be
+   TIMING_HOST or TIMING_GROUP.  If you happen to have the current
+   time handy, pass it as now, otherwise pass NULL */
+static void init_ultra_timing_vals(ultra_timing_vals *timing,
+                                   enum ultra_timing_type utt,
+                                   int num_hosts_in_group,
+                                   struct ultra_scan_performance_vars *perf,
+                                   struct timeval *now);
+
+/* 3rd generation Nmap scanning function. Handles most Nmap port scan types.
+
+   The parameter to gives group timing information, and if it is not NULL,
+   changed timing information will be stored in it when the function returns. It
+   exists so timing can be shared across invocations of this function. If to is
+   NULL (its default value), a default timeout_info will be used. */
+void ultra_scan(std::vector<Target *> &Targets, struct scan_lists *ports,
+                stype scantype, struct timeout_info *to) {
+  o.current_scantype = scantype;
+
+  increment_base_port();
+
+   // Load up _all_ payloads into a mapped table. Only needed for raw scans.
+
+  init_payloads();
+
+  if (Targets.size() == 0) {
+    return;
+  }
+
+// #ifdef WIN32
+//   if (g_has_npcap_loopback == 0 && scantype != CONNECT_SCAN && Targets[0]->ifType() == devt_loopback) {
+//     log_write(LOG_STDOUT, "Skipping %s against %s because Windows does not support scanning your own machine (localhost) this way.\n", scantype2str(scantype), Targets[0]->NameIP());
+//     return;
+//   }
+// #endif
+
+  //win32 useless
+  // Set the variable for status printing
+  o.numhosts_scanning = Targets.size();
+
+  startTimeOutClocks(Targets);
+  UltraScanInfo USI(Targets, ports, scantype);
+/*
+  // Use the requested timeouts.
+  if (to != NULL)
+    USI.gstats->to = *to;
+
+  // if (o.verbose) {
+  //   char targetstr[128];
+  //   bool plural = (Targets.size() != 1);
+  //   if (!plural) {
+  //     (*(Targets.begin()))->NameIP(targetstr, sizeof(targetstr));
+  //   } else Snprintf(targetstr, sizeof(targetstr), "%d hosts", (int) Targets.size());
+  //   log_write(LOG_STDOUT, "Scanning %s [%d port%s%s]\n", targetstr, USI.gstats->numprobes, (USI.gstats->numprobes != 1) ? "s" : "", plural ? "/host" : "");
+  // }
+
+//in our win version, o.verbose is set to 0 and is not changed after that
+//so we discard these codes
+  if (USI.isRawScan())
+    begin_sniffer(&USI, Targets);
+  // Otherwise, no sniffer needed!
+
+  while (!USI.incompleteHostsEmpty()) {//extremely important!
+    doAnyPings(&USI);
+    doAnyOutstandingRetransmits(&USI); // Retransmits from probes_outstanding
+    // Retransmits from retry_stack -- goes after OutstandingRetransmits for
+    // memory consumption reasons
+    doAnyRetryStackRetransmits(&USI);
+    doAnyNewProbes(&USI);
+    gettimeofday(&USI.now, NULL);
+    // printf("TRACE: Finished doAnyNewProbes() at %.4fs\n", o.TimeSinceStartMS(&USI.now) / 1000.0);
+    printAnyStats(&USI);
+    waitForResponses(&USI);
+    gettimeofday(&USI.now, NULL);
+    // printf("TRACE: Finished waitForResponses() at %.4fs\n", o.TimeSinceStartMS(&USI.now) / 1000.0);
+    processData(&USI);
+
+    if (keyWasPressed()) {
+      // This prints something like
+      // SYN Stealth Scan Timing: About 1.14% done; ETC: 15:01 (0:43:23 remaining);
+      USI.SPM->printStats(USI.getCompletionFraction(), NULL);
+
+      if (o.debugging) {
+        // Don't update when getting the current rates, otherwise we can get
+        // anomalies (rates are too low) from having just done a potentially
+        // long waitForResponses without sending any packets.
+        USI.log_current_rates(LOG_STDOUT, false);
+      }
+      //if we don't use o.debugging, discard it
+      //maybe it is useful during our debugging period
+      log_flush(LOG_STDOUT);
+    }
+  }
+
+  USI.send_rate_meter.stop(&USI.now);
+
+  // Save the computed timeouts.
+  if (to != NULL)
+    *to = USI.gstats->to;
+
+  // if (o.verbose) {
+  //   char additional_info[128];
+  //   if (USI.gstats->num_hosts_timedout == 0)
+  //     if (USI.ping_scan) {
+  //       Snprintf(additional_info, sizeof(additional_info), "%lu total hosts",
+  //                (unsigned long) Targets.size());
+  //     } else {
+  //       Snprintf(additional_info, sizeof(additional_info), "%lu total ports",
+  //                (unsigned long) USI.gstats->numprobes * Targets.size());
+  //     }
+  //   else Snprintf(additional_info, sizeof(additional_info), "%d %s timed out",
+  //                   USI.gstats->num_hosts_timedout,
+  //                   (USI.gstats->num_hosts_timedout == 1) ? "host" : "hosts");
+  //   USI.SPM->endTask(NULL, additional_info);
+  // }
+	//the same reason as upper code block, because it uses o.verbose
+  if (o.debugging)
+    USI.log_overall_rates(LOG_STDOUT);
+
+  if (o.debugging > 2 && USI.pd != NULL)
+    pcap_print_stats(LOG_PLAIN, USI.pd);*/
+}
+
+UltraScanInfo::UltraScanInfo() {
+}
+
+UltraScanInfo::~UltraScanInfo() {
+  std::multiset<HostScanStats *, HssPredicate>::iterator hostI;
+
+  for (hostI = incompleteHosts.begin(); hostI != incompleteHosts.end(); hostI++) {
+    delete *hostI;
+  }
+
+  for (hostI = completedHosts.begin(); hostI != completedHosts.end(); hostI++) {
+    delete *hostI;
+  }
+
+  incompleteHosts.clear();
+  completedHosts.clear();
+
+  delete gstats;
+  delete SPM;
+  if (rawsd >= 0) {
+    close(rawsd);
+    rawsd = -1;
+  }
+  if (pd) {
+    pcap_close(pd);
+    pd = NULL;
+  }
+  if (ethsd) {
+    ethsd = NULL; /* NO need to eth_close it due to caching */
+  }
+}
+
+/* Initialize the state for ports that don't receive a response in all the
+   targets. */
+static void set_default_port_state(std::vector<Target *> &targets, stype scantype) {
+  std::vector<Target *>::iterator target;
+
+  for (target = targets.begin(); target != targets.end(); target++) {
+    switch (scantype) {
+    case SYN_SCAN:
+    case ACK_SCAN:
+    case WINDOW_SCAN:
+    case CONNECT_SCAN:
+      (*target)->ports.setDefaultPortState(IPPROTO_TCP, PORT_FILTERED);
+      break;
+    case SCTP_INIT_SCAN:
+      (*target)->ports.setDefaultPortState(IPPROTO_SCTP, PORT_FILTERED);
+      break;
+    case NULL_SCAN:
+    case FIN_SCAN:
+    case MAIMON_SCAN:
+    case XMAS_SCAN:
+      (*target)->ports.setDefaultPortState(IPPROTO_TCP, PORT_OPENFILTERED);
+      break;
+    case UDP_SCAN:
+      (*target)->ports.setDefaultPortState(IPPROTO_UDP,
+        o.defeat_icmp_ratelimit ? PORT_CLOSEDFILTERED : PORT_OPENFILTERED);
+      break;
+    case IPPROT_SCAN:
+      (*target)->ports.setDefaultPortState(IPPROTO_IP, PORT_OPENFILTERED);
+      break;
+    case SCTP_COOKIE_ECHO_SCAN:
+      (*target)->ports.setDefaultPortState(IPPROTO_SCTP, PORT_OPENFILTERED);
+      break;
+    case PING_SCAN:
+    case PING_SCAN_ARP:
+    case PING_SCAN_ND:
+      break;
+    default:
+      fatal("Unexpected scan type found in %s()", __func__);
+    }
+  }
+}
+
+/* Order of initializations in this function CAN BE IMPORTANT, so be careful
+ mucking with it. */
+void UltraScanInfo::Init(std::vector<Target *> &Targets, struct scan_lists *pts, stype scantp) {
+  unsigned int targetno = 0;
+  HostScanStats *hss;
+  int num_timedout = 0;
+
+  gettimeofday(&now, NULL);
+
+  ports = pts;
+
+  seqmask = get_random_u32();
+  scantype = scantp;
+  SPM = new ScanProgressMeter(scantype2str(scantype));
+  send_rate_meter.start(&now);
+  tcp_scan = udp_scan = sctp_scan = prot_scan = false;
+  ping_scan = noresp_open_scan = ping_scan_arp = ping_scan_nd = false;
+  memset((char *) &ptech, 0, sizeof(ptech));
+  switch (scantype) {
+  case FIN_SCAN:
+  case XMAS_SCAN:
+  case MAIMON_SCAN:
+  case NULL_SCAN:
+    noresp_open_scan = true;
+  case ACK_SCAN:
+  case CONNECT_SCAN:
+  case SYN_SCAN:
+  case WINDOW_SCAN:
+    tcp_scan = true;
+    break;
+  case UDP_SCAN:
+    noresp_open_scan = true;
+    udp_scan = true;
+    break;
+  case SCTP_INIT_SCAN:
+  case SCTP_COOKIE_ECHO_SCAN:
+    sctp_scan = true;
+    break;
+  case IPPROT_SCAN:
+    noresp_open_scan = true;
+    prot_scan = true;
+    break;
+  case PING_SCAN:
+    ping_scan = true;
+    // What kind of pings are we doing?
+    if (o.pingtype & (PINGTYPE_ICMP_PING | PINGTYPE_ICMP_MASK | PINGTYPE_ICMP_TS))
+      ptech.rawicmpscan = 1;
+    if (o.pingtype & PINGTYPE_UDP)
+      ptech.rawudpscan = 1;
+    if (o.pingtype & PINGTYPE_SCTP_INIT)
+      ptech.rawsctpscan = 1;
+    if (o.pingtype & PINGTYPE_TCP) {
+      if (o.isr00t)
+        ptech.rawtcpscan = 1;
+      else
+        ptech.connecttcpscan = 1;
+    }
+    if (o.pingtype & PINGTYPE_PROTO)
+      ptech.rawprotoscan = 1;
+    if (o.pingtype & PINGTYPE_CONNECTTCP)
+      ptech.connecttcpscan = 1;
+    break;
+  case PING_SCAN_ARP:
+    ping_scan = true;
+    ping_scan_arp = true;
+    break;
+  case PING_SCAN_ND:
+    ping_scan = true;
+    ping_scan_nd = true;
+    break;
+  default:
+    break;
+  }
+
+  set_default_port_state(Targets, scantype);
+
+  perf.init();
+
+  // Keep a completed host around for a standard TCP MSL (2 min)
+  completedHostLifetime = 120000;
+  memset(&lastCompletedHostRemoval, 0, sizeof(lastCompletedHostRemoval));
+
+  for (targetno = 0; targetno < Targets.size(); targetno++) {
+    if (Targets[targetno]->timedOut(&now)) {
+      num_timedout++;
+      continue;
+    }
+
+    hss = new HostScanStats(Targets[targetno], this);
+    incompleteHosts.insert(hss);
+  }
+  numInitialTargets = Targets.size();
+  nextI = incompleteHosts.begin();
+
+  gstats = new GroupScanStats(this); // Peeks at several elements in USI - careful of order
+  gstats->num_hosts_timedout += num_timedout;
+
+  pd = NULL;
+  rawsd = -1;
+  ethsd = NULL;
+
+  // See if we need an ethernet handle or raw socket. Basically, it's if we
+  // aren't doing a TCP connect scan, or if we're doing a ping scan that
+  // requires it.
+  if (isRawScan()) {
+    if (ping_scan_arp || (ping_scan_nd && o.sendpref != PACKET_SEND_IP_STRONG) || ((o.sendpref & PACKET_SEND_ETH) &&
+        (Targets[0]->ifType() == devt_ethernet
+#ifdef WIN32
+        || (g_has_npcap_loopback && Targets[0]->ifType() == devt_loopback)
+#endif
+        ))) {
+      // We'll send ethernet packets with dnet 
+      ethsd = eth_open_cached(Targets[0]->deviceName());
+      if (ethsd == NULL)
+        fatal("dnet: Failed to open device %s", Targets[0]->deviceName());
+      rawsd = -1;
+    } else {
+#ifdef WIN32
+      win32_fatal_raw_sockets(Targets[0]->deviceName());
+#endif
+      rawsd = nmap_raw_socket();
+      if (rawsd < 0)
+        pfatal("Couldn't open a raw socket. "
+#if defined(sun) && defined(__SVR4)
+        "In Solaris shared-IP non-global zones, this requires the PRIV_NET_RAWACCESS privilege. "
+#endif
+        "Error"
+        );
+      // We do not want to unblock the socket since we want to wait
+      //if kernel send buffers fill up rather than get ENOBUF, and
+      //we won't be receiving on the socket anyway
+      //unblock_socket(rawsd);
+      ethsd = NULL;
+    }
+  }
+}
+
+void ultra_scan_performance_vars::init() {
+  scan_performance_vars::init();
+  ping_magnifier = 3;
+  pingtime = 1250000;
+  tryno_cap = o.getMaxRetransmissions();
+}
+
+/* Return true if pingprobe is an appropriate ping probe for the currently
+   running scan. Because ping probes persist between host discovery and port
+   scanning stages, it's possible to have a ping probe that is not relevant for
+   the scan type, or won't be caught by the pcap filters. Examples of
+   inappropriate ping probes are an ARP ping for a TCP scan, or a raw SYN ping
+   for a connect scan. */
+static bool pingprobe_is_appropriate(const UltraScanInfo *USI,
+                                     const probespec *pingprobe) {
+  switch (pingprobe->type) {
+  case(PS_NONE):
+    return true;
+  case(PS_CONNECTTCP):
+    return USI->scantype == CONNECT_SCAN || (USI->ping_scan && USI->ptech.connecttcpscan);
+  case(PS_TCP):
+  case(PS_UDP):
+  case(PS_SCTP):
+    return (USI->tcp_scan && USI->scantype != CONNECT_SCAN) ||
+           USI->udp_scan ||
+           USI->sctp_scan ||
+           (USI->ping_scan && (USI->ptech.rawtcpscan || USI->ptech.rawudpscan || USI->ptech.rawsctpscan));
+  case(PS_PROTO):
+    return USI->prot_scan || (USI->ping_scan && USI->ptech.rawprotoscan);
+  case(PS_ICMP):
+    return ((USI->ping_scan && !USI->ping_scan_arp ) || pingprobe->pd.icmp.type == 3);
+  case(PS_ARP):
+    return USI->ping_scan_arp;
+  case(PS_ND):
+    return USI->ping_scan_nd;
+  }
+  return false;
+}
+
+HostScanStats::HostScanStats(Target *t, UltraScanInfo *UltraSI) {
+  target = t;
+  USI = UltraSI;
+  next_portidx = 0;
+  sent_arp = false;
+  next_ackportpingidx = 0;
+  next_synportpingidx = 0;
+  next_udpportpingidx = 0;
+  next_sctpportpingidx = 0;
+  next_protoportpingidx = 0;
+  sent_icmp_ping = false;
+  sent_icmp_mask = false;
+  sent_icmp_ts = false;
+  retry_capped_warned = false;
+  num_probes_active = 0;
+  num_probes_waiting_retransmit = 0;
+  lastping_sent = lastprobe_sent = lastrcvd = USI->now;
+  lastping_sent_numprobes = 0;
+  nxtpseq = 1;
+  max_successful_tryno = 0;
+  tryno_mayincrease = true;
+  ports_finished = 0;
+  numprobes_sent = 0;
+  memset(&completiontime, 0, sizeof(completiontime));
+  init_ultra_timing_vals(&timing, TIMING_HOST, 1, &(USI->perf), &USI->now);
+  bench_tryno = 0;
+  memset(&sdn, 0, sizeof(sdn));
+  sdn.last_boost = USI->now;
+  sdn.delayms = o.scan_delay;
+  rld.max_tryno_sent = 0;
+  rld.rld_waiting = false;
+  rld.rld_waittime = USI->now;
+  if (!pingprobe_is_appropriate(USI, &target->pingprobe)) {
+    if (o.debugging > 1)
+      //log_write(LOG_STDOUT, "%s pingprobe type %s is inappropriate for this scan type; resetting.\n", target->targetipstr(), pspectype2ascii(target->pingprobe.type));
+  	  printf("%s pingprobe type %s is inappropriate for this scan type; resetting.\n", target->targetipstr(), pspectype2ascii(target->pingprobe.type));
+    memset(&target->pingprobe, 0, sizeof(target->pingprobe));
+    target->pingprobe_state = PORT_UNKNOWN;
+  }
+}
+
+HostScanStats::~HostScanStats() {
+  std::list<UltraProbe *>::iterator probeI, next;
+
+  /* Move any hosts from the bench to probes_outstanding for easier deletion  */
+  for (probeI = probes_outstanding.begin(); probeI != probes_outstanding.end();
+       probeI = next) {
+    next = probeI;
+    next++;
+    destroyOutstandingProbe(probeI);
+  }
+}
+
+/* Removes a probe from probes_outstanding, adjusts HSS and USS
+   active probe stats accordingly, then deletes the probe. */
+void HostScanStats::destroyOutstandingProbe(std::list<UltraProbe *>::iterator probeI) {
+  UltraProbe *probe = *probeI;
+  assert(!probes_outstanding.empty());
+  if (!probe->timedout) {
+    assert(num_probes_active > 0);
+    num_probes_active--;
+    assert(USI->gstats->num_probes_active > 0);
+    USI->gstats->num_probes_active--;
+    //remember to add!!!!!!!!!!!!!!!!!!!!
+  }
+
+  if (!probe->isPing() && probe->timedout && !probe->retransmitted) {
+    assert(num_probes_waiting_retransmit > 0);
+    num_probes_waiting_retransmit--;
+  }
+
+  /* Remove it from scan watch lists, if it exists on them. */
+  if (probe->type == UltraProbe::UP_CONNECT && probe->CP()->sd > 0)
+    USI->gstats->CSI->clearSD(probe->CP()->sd);
+  probes_outstanding.erase(probeI);
+  delete probe;
+}
+
+/* Initialize the ultra_timing_vals structure timing.  The utt must be
+   TIMING_HOST or TIMING_GROUP.  If you happen to have the current
+   time handy, pass it as now, otherwise pass NULL */
+static void init_ultra_timing_vals(ultra_timing_vals *timing,
+                                   enum ultra_timing_type utt,
+                                   int num_hosts_in_group,
+                                   struct ultra_scan_performance_vars *perf,
+                                   struct timeval *now) {
+  timing->cwnd = (utt == TIMING_HOST) ? perf->host_initial_cwnd : perf->group_initial_cwnd;
+  timing->ssthresh = perf->initial_ssthresh; /* Will be reduced if any packets are dropped anyway */
+  timing->num_replies_expected = 0;
+  timing->num_replies_received = 0;
+  timing->num_updates = 0;
+  if (now)
+    timing->last_drop = *now;
+  else gettimeofday(&timing->last_drop, NULL);
+}
+
+const char *pspectype2ascii(int type) {
+  switch (type) {
+  case PS_NONE:
+    return "NONE";
+  case PS_TCP:
+    return "TCP";
+  case PS_UDP:
+    return "UDP";
+  case PS_SCTP:
+    return "SCTP";
+  case PS_PROTO:
+    return "IP Proto";
+  case PS_ICMP:
+    return "ICMP";
+  case PS_ARP:
+    return "ARP";
+  case PS_ICMPV6:
+    return "ICMPv6";
+  case PS_ND:
+    return "ND";
+  case PS_CONNECTTCP:
+    return "connect";
+  default:
+    fatal("%s: Unknown type: %d", __func__, type);
+  }
+  return ""; // Unreached
+}
+
+UltraProbe::UltraProbe() {
+  type = UP_UNSET;
+  tryno = 0;
+  timedout = false;
+  retransmitted = false;
+  pingseq = 0;
+  mypspec.type = PS_NONE;
+  memset(&sent, 0, sizeof(prevSent));
+  memset(&prevSent, 0, sizeof(prevSent));
+}
+
+UltraProbe::~UltraProbe() {
+  if (type == UP_CONNECT)
+    delete probes.CP;
+}
+
+GroupScanStats::GroupScanStats(UltraScanInfo *UltraSI) {
+  memset(&latestip, 0, sizeof(latestip));
+  memset(&timeout, 0, sizeof(timeout));
+  USI = UltraSI;
+  init_ultra_timing_vals(&timing, TIMING_GROUP, USI->numIncompleteHosts(), &(USI->perf), &USI->now);
+  initialize_timeout_info(&to);
+  /* Default timout should be much lower for arp */
+  if (USI->ping_scan_arp)
+    to.timeout = MAX(o.minRttTimeout(), MIN(o.initialRttTimeout(), INITIAL_ARP_RTT_TIMEOUT)) * 1000;
+  num_probes_active = 0;
+  numtargets = USI->numIncompleteHosts(); // They are all incomplete at the beginning
+  numprobes = USI->numProbesPerHost();
+
+  if (USI->scantype == CONNECT_SCAN || USI->ptech.connecttcpscan)
+    CSI = new ConnectScanInfo;
+  else CSI = NULL;
+  probes_sent = probes_sent_at_last_wait = 0;
+  lastping_sent = lastrcvd = USI->now;
+  send_no_earlier_than = USI->now;
+  send_no_later_than = USI->now;
+  lastping_sent_numprobes = 0;
+  pinghost = NULL;
+  gettimeofday(&last_wait, NULL);
+  num_hosts_timedout = 0;
+}
+
+GroupScanStats::~GroupScanStats() {
+  delete CSI;
+}
+
+/* Return the total number of probes that may be sent to each host. This never
+   changes after initialization. */
+unsigned int UltraScanInfo::numProbesPerHost() {
+  unsigned int numprobes = 0;
+
+  if (tcp_scan) {
+    numprobes = ports->tcp_count;
+  } else if (udp_scan) {
+    numprobes = ports->udp_count;
+  } else if (sctp_scan) {
+    numprobes = ports->sctp_count;
+  } else if (prot_scan) {
+    numprobes = ports->prot_count;
+  } else if (ping_scan_arp) {
+    numprobes = 1;
+  } else if (ping_scan_nd) {
+    numprobes = 1;
+  } else if (ping_scan) {
+    numprobes = 0;
+    if (ptech.rawtcpscan) {
+      if (o.pingtype & PINGTYPE_TCP_USE_ACK)
+        numprobes += ports->ack_ping_count;
+      if (o.pingtype & PINGTYPE_TCP_USE_SYN)
+        numprobes += ports->syn_ping_count;
+    }
+    if (ptech.rawudpscan)
+      numprobes += ports->udp_ping_count;
+    if (ptech.rawsctpscan)
+      numprobes += ports->sctp_ping_count;
+    if (ptech.rawicmpscan) {
+      if (o.pingtype & PINGTYPE_ICMP_PING)
+        numprobes++;
+      if (o.pingtype & PINGTYPE_ICMP_MASK)
+        numprobes++;
+      if (o.pingtype & PINGTYPE_ICMP_TS)
+        numprobes++;
+    }
+    if (ptech.rawprotoscan)
+      numprobes += ports->proto_ping_count;
+    if (ptech.connecttcpscan)
+      numprobes += ports->syn_ping_count;
+  } else assert(0);
+
+  return numprobes;
+}
